@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.ipynb_checkpoints
+
+# Virtual environments
+greener_cities_env/
+
+# Data files
+data/
+*.csv
+*.tif
+*.shp
+*.geojson
+*.gpkg
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# OS and editor junk
+.DS_Store
+*.swp
