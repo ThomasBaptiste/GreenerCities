@@ -20,3 +20,6 @@ data/
 # OS and editor junk
 .DS_Store
 *.swp
+
+cache/
+.pytest_cache/
