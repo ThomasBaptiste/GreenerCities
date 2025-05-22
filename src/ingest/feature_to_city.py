@@ -202,6 +202,36 @@ def get_population(year: int) -> ee.Image:
         .rename('Population')
     )
 
+def get_water_features(ee_grid: ee.FeatureCollection,
+                       year: int) -> ee.Image:
+    water_occurence = get_water_occurence_image(year)
+    dist_to_water = get_water_distance_image()
+
+    # Combine both into one multi-band image
+    water_stack = water_occurence.addBands(dist_to_water)
+
+    if ee_grid:
+        water_stack = water_stack.clip(ee_grid.geometry())
+
+    return water_stack
+
+# get water percentage
+def get_water_occurence_image(year: int) -> ee.Image:
+    # Returns occurrence percentage directly (0–100)
+    water_occurrence = ee.Image('JRC/GSW1_4/GlobalSurfaceWater').select('occurrence')
+    return water_occurrence.rename("WaterFraction")
+
+def get_water_mask_image(year: int) -> ee.Image:
+    water_occurrence = ee.Image('JRC/GSW1_4/GlobalSurfaceWater').select('occurrence')
+    water_mask = water_occurrence.gte(50).rename("WaterMask")  # presence in ≥50% of the time
+    return water_mask
+
+# Get distance to nearest water in meters
+def get_water_distance_image() -> ee.Image:
+    water_mask = get_water_mask_image(2020).gte(50)  # fixed year as mostly stable
+    # Distance to water (use inverted mask for non-water)
+    dist = water_mask.Not().fastDistanceTransform().sqrt().multiply(30).rename("DistToWater")
+    return dist
 
 # Apply static feature image to the city grid 
 def interpolate_single_image(img: ee.Image, 
@@ -298,7 +328,28 @@ def get_rural_reference_lst(ee_grid_geom:ee.Geometry.Polygon,
 
     return pd.DataFrame(rural_lst_by_date)
 
-def get_lst_anomaly(rural_lst: pd.DataFrame,
+#----------------------------------------------------#
+# FEATURE CREATION
+#----------------------------------------------------#
+def create_features(gdf: gpd.GeoDataFrame,
+                    rural_lst: pd.DataFrame)-> gpd.GeoDataFrame:
+    # add other features over time
+    gdf = create_building_height(gdf)
+    gdf = create_built_surface(gdf)
+    gdf = create_water_fraction(gdf)
+    gdf = create_lst_anomaly(rural_lst,gdf)
+    return gdf
+
+def create_building_height(gdf: gpd.GeoDataFrame)-> gpd.GeoDataFrame:
+    gdf["BuildingHeight"] = gdf["BuildingVolume"]/gdf["BuiltSurface"]
+    gdf.drop(columns='BuildingVolume', inplace=True)
+    return gdf
+
+def create_built_surface(gdf: gpd.GeoDataFrame)-> gpd.GeoDataFrame:
+    gdf["BuiltSurface"] = gdf["BuiltSurface"]/(100*100)
+    return gdf
+
+def create_lst_anomaly(rural_lst: pd.DataFrame,
                     gdf: gpd.GeoDataFrame)-> pd.Series:
     # Get the unique rural LST for the specific date
     for dates in rural_lst["date"]:
@@ -311,12 +362,16 @@ def get_lst_anomaly(rural_lst: pd.DataFrame,
         lst_difference = urban_lsts - rural_lst_value
 
         gdf.loc[gdf["date"] == dates, "LST_anomaly"] = lst_difference
+    return gdf
 
-    return gdf["LST_anomaly"]
+def create_water_fraction(gdf: gpd.GeoDataFrame)-> gpd.GeoDataFrame:
+    gdf["WaterFraction"] = gdf["WaterFraction"]/(100.0)
+    return gdf
 
 #----------------------------------------------------#
 #----------------------------------------------------#
 #----------------------------------------------------#
+
 
 def main(place_name: str, 
         project_name: str, 
@@ -358,10 +413,21 @@ def main(place_name: str,
     # Combine to existing dataframe
     gdf = gdf.merge(ghsl_gdf.drop(columns=['geometry','date']), on='id', how='left')
 
+    #Initialize water features (ESA WORLD COVER)
+    water_img = get_water_features(ee_grid, year)
+    # Interpolate to city grid
+    water_list = interpolate_single_image(water_img, ee_grid_chunks, scale)
+    # Build GeoDataframe
+    water_gdf = gpd.GeoDataFrame(water_list, geometry='geometry', crs='EPSG:4326')
+    # Combine to existing dataframe
+    gdf = gdf.merge(water_gdf.drop(columns=['geometry', 'date']), on='id', how='left')
+
     # Get mean rural lst
     rural_lst = get_rural_reference_lst(ee_grid.geometry(), 10, year)
-    # Compute LST anomaly and add to dataframe
-    gdf["LST_anomaly"] = get_lst_anomaly(rural_lst, gdf)
+     
+    
+    # Create features we need for modeling
+    gdf = create_features(gdf,rural_lst)
 
 
     # Project back to city espg

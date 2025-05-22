@@ -67,6 +67,6 @@ def main(place_name: str, cell_size: float):
     store_grid_to_file(grid, place_name, place_epsg)
 
 
-# Call main to run both functions
+# Call main to run all
 if __name__ == "__main__":
     main()

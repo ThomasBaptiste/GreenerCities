@@ -5,7 +5,7 @@ Ensuite enregistrer dans un fichier.
 
 LES trucs numéro 1 à faire:
 _mettre tout ça dans un fichier python en fonction modulables.
-    > verifier les données GHSL
+    > FIX LE DISTANCETOWATER QUI NE MARCHE PAS
     >Maintenant il faut faire l'addition pour les autres données satelitaires avec toute leurs spécificités.
 _verifier qu'il n'y a pas de redite
 _faire des unit tests
@@ -18,33 +18,5 @@ Ensuite:
     > voir les autres sources comment les incorporer au jeu de données apres (pas sur qu'on est les meme dates, comment ça fonctionne)
 
 
-
-
-
-⬇️ Output Format for ML Training:
-
-You want a DataFrame like this:
-cell_id	date	LST	NDVI	Urban_Class	...
-1	2021-07-03	298.2	0.54	1	...
-1	2021-08-10	296.5	0.62	1	...
-2	2021-07-03	300.1	0.33	2	...
-🔁 Looping over Time
-
-Since EE limits memory and getInfo() can break for large requests, you could loop over months or years, and for each:
-
-    Load the collection for that window,
-
-    Map LST + other features,
-
-    Run zonal stats per grid cell,
-
-    Collect the results locally and append them.
-
-
-
-Afterwards, we will need to check public datasets to find:
- > Which features we want
- > How we can access them
- > How to get them for the city only
 
 Next step will be to clean/format the data
