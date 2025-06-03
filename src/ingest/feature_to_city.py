@@ -63,13 +63,35 @@ def get_ndvi(img: ee.Image) -> ee.Image:
               .rename("NDVI")
     return ndvi
 
+def get_albedo(img):
+    # Scale reflectance bands properly
+    sr_b2 = img.select('SR_B2').multiply(0.0000275).add(-0.2)
+    sr_b3 = img.select('SR_B3').multiply(0.0000275).add(-0.2)
+    sr_b4 = img.select('SR_B4').multiply(0.0000275).add(-0.2)
+    sr_b5 = img.select('SR_B5').multiply(0.0000275).add(-0.2)
+    sr_b6 = img.select('SR_B6').multiply(0.0000275).add(-0.2)
+    sr_b7 = img.select('SR_B7').multiply(0.0000275).add(-0.2)
+
+    albedo = (
+        sr_b2.multiply(0.356)
+        .add(sr_b3.multiply(0.130))
+        .add(sr_b4.multiply(0.373))
+        .add(sr_b5.multiply(0.085))
+        .add(sr_b6.multiply(0.072))
+        .add(sr_b7.multiply(0.036))
+        .subtract(0.0018)
+        .rename('Albedo')
+    )
+    return img.addBands(albedo)
+
 def process_image(img: ee.image) -> ee.Image: 
     # Convert ST_B10 to LST in Kelvin
     lst = get_lst(img)
     #extract NDVI (vegetation)
     ndvi = get_ndvi(img)
+    albedo = get_albedo(img).select('Albedo')
     date = img.date().format("YYYY-MM-dd")
-    return lst.addBands(ndvi).set('date',date)
+    return lst.addBands([ndvi, albedo]).set('date', date)
 
 
 # Get collection containing LST, NDVI
@@ -232,6 +254,17 @@ def get_water_distance_image() -> ee.Image:
     # Distance to water (use inverted mask for non-water)
     dist = water_mask.Not().fastDistanceTransform().sqrt().multiply(30).rename("DistToWater")
     return dist
+
+
+def get_elevation_features(ee_grid: ee.FeatureCollection) -> ee.Image:
+    elevation = get_elevation_image().reproject(crs='EPSG:4326', scale=30)
+    if ee_grid:
+        elevation = elevation.clip(ee_grid.geometry())
+    return elevation
+
+def get_elevation_image() -> ee.Image:
+    elevation = ee.Image("USGS/SRTMGL1_003").select('elevation').rename('Elevation')
+    return elevation
 
 # Apply static feature image to the city grid 
 def interpolate_single_image(img: ee.Image, 
@@ -421,6 +454,17 @@ def main(place_name: str,
     water_gdf = gpd.GeoDataFrame(water_list, geometry='geometry', crs='EPSG:4326')
     # Combine to existing dataframe
     gdf = gdf.merge(water_gdf.drop(columns=['geometry', 'date']), on='id', how='left')
+
+    # Initialize elevation static feature
+    elevation_img = get_elevation_features(ee_grid)
+    # Interpolate to city grid
+    elevation_list = interpolate_single_image(elevation_img, ee_grid_chunks, scale)
+    # Build GeoDataframe
+    elevation_gdf = gpd.GeoDataFrame(elevation_list, geometry='geometry', crs='EPSG:4326')
+    elevation_gdf.rename(columns={'mean': 'Elevation'}, inplace=True)
+    # Combine to existing dataframe
+    gdf = gdf.merge(elevation_gdf.drop(columns=['geometry', 'date']), on='id', how='left')
+
 
     # Get mean rural lst
     rural_lst = get_rural_reference_lst(ee_grid.geometry(), 10, year)
