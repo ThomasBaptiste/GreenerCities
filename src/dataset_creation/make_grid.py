@@ -15,11 +15,11 @@ def get_epsg(place_name: str) -> str:
     elif country == "germany":
         return 25832  # ETRS89 / UTM zone 32N for Germany
     elif country == "italy":
-        return 3003  # Italy, EPSG:3003 (Monte Mario) for Rome
+        return 3003  # Italy, EPSG:3003 
     else:
         raise ValueError(f"EPSG code for country {country} not found.")
 
-def make_grid_in_city(gdf: gpd.GeoDataFrame, cell_size: float, place_epsg: str) -> gpd.GeoDataFrame:
+def make_grid_in_city(gdf: gpd.GeoDataFrame, cell_size: int, place_epsg: str) -> gpd.GeoDataFrame:
     # Define bounding box
     min_x, min_y, max_x, max_y = gdf.total_bounds
 
@@ -54,7 +54,7 @@ def store_grid_to_file(grid: gpd.GeoDataFrame, place_name: str, place_epsg: str)
     # Store the grid with the updated file name
     grid.to_file(file_name, driver="GeoJSON")
 
-def main(place_name: str, cell_size: float):
+def make_grid(place_name: str, cell_size: int):
     # Get the geodataframe from the chosen city using OSMnx
     gdf = ox.geocode_to_gdf(place_name)
     # Get EPSG code for the city

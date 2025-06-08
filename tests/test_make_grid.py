@@ -2,7 +2,7 @@ import pytest
 from unittest import mock
 import geopandas as gpd
 from shapely.geometry import Point, Polygon
-from ingest.make_grid import get_epsg, make_grid_in_city, store_grid_to_file, main
+from dataset_creation.make_grid import get_epsg, make_grid_in_city, store_grid_to_file, main
 
 def test_get_espg():
     place_name = 'paris,france'  # city in france
