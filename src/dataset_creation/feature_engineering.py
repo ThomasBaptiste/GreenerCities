@@ -8,6 +8,15 @@ def create_features(gdf: gpd.GeoDataFrame,
     gdf = create_built_surface(gdf)
     gdf = create_water_fraction(gdf)
     gdf = create_lst_anomaly(rural_lst,gdf)
+    # --- IMPORTANT: Ensure 'date' column is datetime objects BEFORE using it ---
+    # This line needs to be executed successfully.
+    try:
+        gdf['date'] = pd.to_datetime(gdf['date'])
+    except Exception as e:
+        print(f"Error converting 'date' column to datetime: {e}")
+        print("Please check the format of your date strings in the 'date' column.")
+        exit() # Exit if date conversion fails
+    gdf['season'] = gdf['date'].apply(get_season)
     return gdf
 
 def create_building_height(gdf: gpd.GeoDataFrame)-> gpd.GeoDataFrame:
@@ -37,3 +46,17 @@ def create_lst_anomaly(rural_lst: pd.DataFrame,
 def create_water_fraction(gdf: gpd.GeoDataFrame)-> gpd.GeoDataFrame:
     gdf["WaterFraction"] = gdf["WaterFraction"]/(100.0)
     return gdf
+
+
+
+def get_season(date):
+
+    month = date.month
+    if 3 <= month <= 5:
+        return 'Spring'
+    elif 6 <= month <= 8:
+        return 'Summer'
+    elif 9 <= month <= 11:
+        return 'Autumn'
+    else:
+        return 'Winter'
