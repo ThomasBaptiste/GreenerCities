@@ -6,7 +6,8 @@ from src.dataset_creation.util import (
 
 from src.dataset_creation.variable_features import (
     get_landsat_collection,
-    get_rural_reference_lst
+    get_rural_reference_lst,
+    create_wind_speed
 )
 
 from src.dataset_creation.interpolation import (
@@ -55,7 +56,6 @@ def feature_to_city(place_name: str,
     # Now build GeoDataFrame
     gdf = gpd.GeoDataFrame(gdf_list, geometry='geometry', crs='EPSG:4326')
 
-
     # add static data to the dataframe
     # Initialize GHSL features
     ghsl = get_ghsl_features(ee_grid, year)
@@ -96,6 +96,10 @@ def feature_to_city(place_name: str,
 
     # Project back to city espg
     gdf = gdf.to_crs(f'EPSG:{city_epsg}')
+
+    # Compute daily wind speed value
+    gdf = create_wind_speed(gdf)
+
     # Save to GeoJSON file
     gdf.to_file(f'data/processed/{city_name}_{year}.geojson', driver='GeoJSON')
 

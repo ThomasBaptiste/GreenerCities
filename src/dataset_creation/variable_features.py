@@ -1,6 +1,8 @@
 import ee
 import geopandas as gpd
 import pandas as pd
+from shapely.geometry import Point
+import numpy as np
 
 # Extract Land Surface Temperature (LST) in Celsius
 def get_lst(img: ee.Image) -> ee.Image:
@@ -64,6 +66,83 @@ def get_landsat_collection(ee_grid: ee.FeatureCollection,
 
     return collection
 
+#----------------------------------------------------#
+# METEO FEATURES
+#----------------------------------------------------#
+
+
+def get_daily_wind_speed_single_pixel(row):
+    date = row['date'] # Use the normalized date for filtering GEE data
+    point = row['centroid_geometry'] # This is a shapely Point object in Lat/Lon
+
+    ee_point = ee.Geometry.Point(point.x, point.y)
+
+    era5_daily = ee.ImageCollection('ECMWF/ERA5_LAND/DAILY_AGGR') \
+               .filterDate(date.strftime('%Y-%m-%d'), (date + pd.Timedelta(days=1)).strftime('%Y-%m-%d')) \
+               .select(['u_component_of_wind_10m', 'v_component_of_wind_10m'])
+
+    def calculate_wind_speed(image):
+        u = image.select('u_component_of_wind_10m')
+        v = image.select('v_component_of_wind_10m')
+        wind_speed = u.pow(2).add(v.pow(2)).sqrt().rename('wind_speed')
+        return wind_speed.copyProperties(image, ['system:time_start', 'system:time_end'])
+
+    wind_speed_collection = era5_daily.map(calculate_wind_speed)
+
+    era5_nominal_resolution_m = 27800
+
+    try:
+        if wind_speed_collection.size().getInfo() > 0:
+            wind_image = wind_speed_collection.first()
+            wind_value = wind_image.sample(
+                region=ee_point,
+                scale=era5_nominal_resolution_m,
+                projection=wind_image.select('wind_speed').projection()
+            ).first().get('wind_speed').getInfo()
+            return wind_value
+        else:
+            return np.nan
+    except ee.EEException as e:
+        print(f"Error processing {date} at {point}: {e}")
+        return np.nan
+
+def create_wind_speed(gdf: gpd.GeoDataFrame)-> gpd.GeoDataFrame:
+
+    gdf['centroid_geometry'] = gdf.geometry.centroid
+    gdf['centroid_geometry'] = gdf['centroid_geometry'].to_crs("EPSG:4326")
+
+
+    # Identify the "representative" row for each date and calculate its wind speed ---
+
+    # Get unique normalized dates
+    unique_dates = gdf['date'].unique()
+
+    # Create a list to store results for the representative rows
+    representative_data = []
+
+    for u_date in unique_dates:
+        # Find the first row for this specific date
+        # .iloc[0] gets the first row of the filtered DataFrame
+        representative_row = gdf[gdf['date'] == u_date].iloc[0]
+
+        # Calculate wind speed for this representative row
+        wind_speed = get_daily_wind_speed_single_pixel(representative_row)
+
+        # Store the date and its calculated wind speed
+        representative_data.append({'date': u_date, 'wind_speed_ms': wind_speed})
+
+    # Convert the list of dictionaries to a DataFrame
+    representative_df = pd.DataFrame(representative_data)
+
+    # Merge the representative wind speeds back to the original gdf 
+    # Merge on the normalized_date to apply the single value to all rows with that date
+    gdf = gdf.merge(representative_df, on='date', how='left')
+
+
+    # You can also drop the temporary 'centroid_geometry' column if you don't need it
+    gdf = gdf.drop(columns=['centroid_geometry'])
+
+    return gdf
 
 #----------------------------------------------------#
 # RURAL REFERENCE
