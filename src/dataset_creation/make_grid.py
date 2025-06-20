@@ -9,15 +9,9 @@ def get_epsg(place_name: str) -> str:
     country = place_name.split(',')[-1].strip().lower()
 
     if country == "france":
-        return 2154  # Lambert-93 for France
-    elif country == "spain":
-        return 25830  # ETRS89 / UTM zone 30N for Spain
-    elif country == "germany":
-        return 25832  # ETRS89 / UTM zone 32N for Germany
-    elif country == "italy":
-        return 3003  # Italy, EPSG:3003 
+        return 2154  # Lambert-93 for France 
     else:
-        raise ValueError(f"EPSG code for country {country} not found.")
+        raise ValueError(f"EPSG code for country {country} not found. Only available in France at the moment")
 
 def make_grid_in_city(gdf: gpd.GeoDataFrame, cell_size: int, place_epsg: str) -> gpd.GeoDataFrame:
     # Define bounding box

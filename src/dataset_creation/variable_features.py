@@ -106,41 +106,93 @@ def get_daily_wind_speed_single_pixel(row):
         print(f"Error processing {date} at {point}: {e}")
         return np.nan
 
-def create_wind_speed(gdf: gpd.GeoDataFrame)-> gpd.GeoDataFrame:
 
+# GEE Function for Solar Radiation
+def get_daily_solar_radiation_single_pixel(row):
+    """
+    Fetches the daily ERA5-Land surface_solar_radiation_downwards for a single point (centroid) and date.
+    Assumes row['date'] is a pandas datetime object and row['centroid_geometry'] is a shapely Point in EPSG:4326.
+    """
+    date_obj = row['date'] # Using 'date' as per requested structure
+    point = row['centroid_geometry'] # Using 'centroid_geometry' as per requested structure
+
+    ee_point = ee.Geometry.Point(point.x, point.y)
+
+    start_date_str = date_obj.strftime('%Y-%m-%d')
+    end_date_str = (date_obj + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
+
+    # Using ERA5-Land Daily Aggregated for Surface Solar Radiation Downwards
+    era5_land_solar = ee.ImageCollection('ECMWF/ERA5_LAND/DAILY_AGGR') \
+                      .filterDate(start_date_str, end_date_str) \
+                      .select(['surface_solar_radiation_downwards_sum']) # Select the SSRD band
+
+    era5_land_nominal_resolution_m = 9000 # Corrected for ERA5-Land
+
+    try:
+        collection_size = era5_land_solar.size().getInfo()
+        if collection_size > 0:
+            solar_image = era5_land_solar.first()
+            solar_value = solar_image.sample(
+                region=ee_point,
+                scale=era5_land_nominal_resolution_m,
+                projection=solar_image.select('surface_solar_radiation_downwards_sum').projection()
+            ).first().get('surface_solar_radiation_downwards_sum').getInfo()
+            return solar_value
+        else:
+            return np.nan
+    except ee.EEException as e:
+        print(f"Error processing {start_date_str} at {point}: {e}. Returning NaN.")
+        return np.nan
+    except Exception as e:
+        print(f"General Error for {start_date_str} at {point}: {e}. Returning NaN.")
+        return np.nan
+
+
+
+# Wrapper function for wind speed and solar radiation
+def add_daily_climate_data(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """
+    Adds daily wind speed and solar radiation to the GeoDataFrame.
+    It computes these values for the first row of each unique date and applies them
+    to all other rows with the same date.
+    """
+    # Prepare centroids for the current gdf
     gdf['centroid_geometry'] = gdf.geometry.centroid
     gdf['centroid_geometry'] = gdf['centroid_geometry'].to_crs("EPSG:4326")
 
+    # Normalize date for consistent daily keys and GEE filtering
+    gdf['normalized_date_for_merge'] = gdf['date'].dt.normalize()
 
-    # Identify the "representative" row for each date and calculate its wind speed ---
+    unique_dates_for_processing = gdf['normalized_date_for_merge'].unique()
 
-    # Get unique normalized dates
-    unique_dates = gdf['date'].unique()
+    representative_climate_data = []
 
-    # Create a list to store results for the representative rows
-    representative_data = []
+    # Removed tqdm loop
+    for u_norm_date in unique_dates_for_processing:
+        representative_row_candidates = gdf[gdf['normalized_date_for_merge'] == u_norm_date]
+        if 'original_id' in representative_row_candidates.columns:
+            representative_row = representative_row_candidates.sort_values(by='original_id').iloc[0]
+        else:
+            representative_row = representative_row_candidates.iloc[0]
 
-    for u_date in unique_dates:
-        # Find the first row for this specific date
-        # .iloc[0] gets the first row of the filtered DataFrame
-        representative_row = gdf[gdf['date'] == u_date].iloc[0]
+        temp_row_for_gee_call = representative_row.copy()
+        temp_row_for_gee_call['date'] = temp_row_for_gee_call['normalized_date_for_merge']
 
-        # Calculate wind speed for this representative row
-        wind_speed = get_daily_wind_speed_single_pixel(representative_row)
+        wind_speed = get_daily_wind_speed_single_pixel(temp_row_for_gee_call)
+        solar_radiation = get_daily_solar_radiation_single_pixel(temp_row_for_gee_call)
 
-        # Store the date and its calculated wind speed
-        representative_data.append({'date': u_date, 'wind_speed_ms': wind_speed})
+        representative_climate_data.append({
+            'normalized_date_for_merge': u_norm_date,
+            'daily_wind_speed_ms': wind_speed,
+            'daily_solar_radiation': solar_radiation
+        })
 
-    # Convert the list of dictionaries to a DataFrame
-    representative_df = pd.DataFrame(representative_data)
+    representative_df_climate = pd.DataFrame(representative_climate_data)
 
-    # Merge the representative wind speeds back to the original gdf 
-    # Merge on the normalized_date to apply the single value to all rows with that date
-    gdf = gdf.merge(representative_df, on='date', how='left')
+    gdf = gdf.merge(representative_df_climate, on='normalized_date_for_merge', how='left')
 
-
-    # You can also drop the temporary 'centroid_geometry' column if you don't need it
-    gdf = gdf.drop(columns=['centroid_geometry'])
+    # Drop the temporary columns created within this function
+    gdf = gdf.drop(columns=['centroid_geometry', 'normalized_date_for_merge'], errors='ignore')
 
     return gdf
 

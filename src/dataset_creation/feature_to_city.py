@@ -7,7 +7,7 @@ from src.dataset_creation.util import (
 from src.dataset_creation.variable_features import (
     get_landsat_collection,
     get_rural_reference_lst,
-    create_wind_speed
+    add_daily_climate_data
 )
 
 from src.dataset_creation.interpolation import (
@@ -93,12 +93,11 @@ def feature_to_city(place_name: str,
     # Create features we need for modeling
     gdf = create_features(gdf,rural_lst)
 
-
     # Project back to city espg
     gdf = gdf.to_crs(f'EPSG:{city_epsg}')
 
-    # Compute daily wind speed value
-    gdf = create_wind_speed(gdf)
+    # Compute daily wind speed value and solar radiation
+    gdf = add_daily_climate_data(gdf)
 
     # Save to GeoJSON file
     gdf.to_file(f'data/processed/{city_name}_{year}.geojson', driver='GeoJSON')
